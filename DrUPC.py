@@ -270,13 +270,14 @@ def main():
     try:
         opts, args = getopt.getopt(sys.argv[1:],
                 'ekxu:p:sh',
-                ['login','kill','logout','user','pass','status','help'])
+                ['login','kill','logout','user=','pass=','status','help'])
     except getopt.GetoptError as err:
         print(err)
         usage()
         sys.exit(2)
 
     for o,a in opts:
+        print 'o',o,'x'
         if o in ('-h', '--help'):
             usage()
             sys.exit()
