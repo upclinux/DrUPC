@@ -277,7 +277,6 @@ def main():
         sys.exit(2)
 
     for o,a in opts:
-        print 'o',o,'x'
         if o in ('-h', '--help'):
             usage()
             sys.exit()
