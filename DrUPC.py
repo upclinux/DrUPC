@@ -29,10 +29,10 @@ import sys
 import getpass
 
 # 注意：
-# 172.19.255.150 是 UPC 的认证。在其他环境下能 ping 通但是连不通
+# 172.16.4.3 是 UPC 的认证。在其他环境下能 ping 通但是连不通
 # 222.195.191.231 是宿舍网口的认证，没有做屏蔽所以在连 UPC 时也能访问
 # 因此 172 那个必须放在 222 前面
-authServers = ['http://172.19.255.150', 'http://222.195.191.230']
+authServers = ['http://172.16.4.3', 'http://222.195.191.230']
 keywords = {
     authServers[0]: 'Android',
     authServers[1]: '222.195.191.230'
@@ -78,9 +78,9 @@ class wifiAuthCrawler(crawler):
 
     def __init__(self, username='', password=''):
         crawler.__init__(self, username, password)
-        self.loginPage = 'http://172.19.255.150'
-        self.postPage = 'http://172.19.255.150'
-        self.logoutPage = 'http://172.19.255.150/F.htm'
+        self.loginPage = 'http://172.16.4.3'
+        self.postPage = 'http://172.16.4.3'
+        self.logoutPage = 'http://172.16.4.3/F.htm'
 
     def login(self):
         # 检查是否已经登录了
@@ -90,7 +90,7 @@ class wifiAuthCrawler(crawler):
 
         headers = {
             'User-Agent' : 'Mozilla/5.0 (Windows NT 6.1; WOW64; rv:14.0) Gecko/20100101 Firefox/14.0.1',  
-            'Referer' : 'http://172.19.255.150'
+            'Referer' : 'http://172.16.4.3'
             }
         ps = 1
         pid = '1'
