@@ -16,13 +16,16 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-# 对账号列表进行逐个测试
-# 如果已停机或者密码错误，删除这个账号
-# 如果连接成功，判断是否已经连上网
-
 from DrUPC import *
 import sys
 import getopt
+import time
+import random
+
+filen = 'accounts.lst'
+watchmode = False
+interval = 30
+randommode = False
 
 
 def get_crawler():
@@ -39,13 +42,24 @@ def get_crawler():
         return False
 
 
+def watch():
+    time.sleep(interval)
+    return detect_connect_status()
+
+
 def start_test(filename):
     crawler = get_crawler()
-    if crawler is True or crawler is False:
+    if type(crawler) is bool:
         return crawler
 
     with open(filename, 'r') as f:
-        for record in f:
+        if randommode:
+            records = f.readlines()
+            random.shuffle(records)
+        else:
+            records = f
+
+        for record in records:
             try:
                 record = record.splitlines()[0]
                 user, passkey = record.split(',')
@@ -59,7 +73,21 @@ def start_test(filename):
             try:
                 if crawler.login():
                     print 'OK'
-                    return True
+
+                    if watchmode:
+                        sys.stdout.write('Watching.')
+                        sys.stdout.flush()  # for Cmder
+                        while watch():
+                            sys.stdout.write('.')
+                            sys.stdout.flush()  # for Cmder
+                        print    
+                        print '%s is Dead.' % user
+                    else:        
+                        return True
+
+            except KeyboardInterrupt:
+                print 'Exit'
+                return True
             except Exception, e:
                 print 'Failed: ', e
 
@@ -67,6 +95,41 @@ def start_test(filename):
     return False
 
 
+def usage():
+    print("Usage: %s [OPTION]" % sys.argv[0])
+    print("""
+    -f, --file      Use another config file (Def. accounts.lst)
+    -w, --watch     Watch and try to reconnect
+    -i, --interval  Interval (def. 30)
+    -r, --random    Try random one
+    -h, --help      give this help list
+""")
+
+
 if __name__ == '__main__':
-    fn = sys.argv[1] if len(sys.argv)>1 else 'accounts.lst'
-    start_test(fn)
+    try:
+        opts, args = getopt.getopt(sys.argv[1:],
+                                   'f:wi:rh',
+                                   ['file=','watch','interval=','random','help'])
+    except getopt.GetoptError as err:
+        print(err)
+        usage()
+        sys.exit(2)
+
+    for o, a in opts:
+        if o in ('-h', '--help'):
+            usage()
+            sys.exit()
+        elif o in ('-f', '--file'):
+            filen = a
+        elif o in ('-w', '--watch'):
+            watchmode = True
+        elif o in ('-i', '--interval'):
+            interval = a
+        elif o in ('-r', '--random'):
+            randommode = True
+
+    if start_test(filen):
+        sys.exit(0)
+    else:    
+        sys.exit(1)
