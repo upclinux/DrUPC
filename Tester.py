@@ -17,6 +17,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 from DrUPC import *
+from itertools import cycle
 import sys
 import getopt
 import time
@@ -26,11 +27,14 @@ filen = 'accounts.lst'
 watchmode = False
 interval = 30
 randommode = False
+force = False
 
 
 def get_crawler():
     if detect_connect_status():
-        return True
+        print 'Internet'
+        if not force:
+            return True
 
     auth = detect_authserver()
     if auth == authServers[0]:
@@ -42,9 +46,23 @@ def get_crawler():
         return False
 
 
-def watch():
-    time.sleep(interval)
-    return detect_connect_status()
+def watch(user):
+    sys.stdout.write('Watching')
+    sys.stdout.flush()  # for Cmder
+    while detect_connect_status():
+        sys.stdout.write('.')
+        sys.stdout.flush()  # for Cmder
+        # Animation
+        for i, ch in enumerate(cycle(['|', '/', '-', '\\'])):
+            sys.stdout.write(ch)
+            sys.stdout.flush()
+            time.sleep(0.1)
+            sys.stdout.write("\b")
+            sys.stdout.flush()
+            if i >= interval*10 - 1:
+                break
+    print    
+    print '%s is Dead.' % user
 
 
 def start_test(filename):
@@ -75,19 +93,19 @@ def start_test(filename):
                     print 'OK'
 
                     if watchmode:
-                        sys.stdout.write('Watching.')
-                        sys.stdout.flush()  # for Cmder
-                        while watch():
-                            sys.stdout.write('.')
-                            sys.stdout.flush()  # for Cmder
-                        print    
-                        print '%s is Dead.' % user
+                        watch(user)
                     else:        
                         return True
 
             except KeyboardInterrupt:
                 print 'Exit'
                 return True
+            except AlreadyLoginError:
+                print 'Already Login.'
+                if watchmode:
+                    watch('?')
+                else:
+                    return True
             except Exception, e:
                 print 'Failed: ', e
 
@@ -98,8 +116,9 @@ def start_test(filename):
 def usage():
     print("Usage: %s [OPTION]" % sys.argv[0])
     print("""
-    -f, --file      Use another config file (Def. accounts.lst)
+    -e, --file      Use another config file (Def. accounts.lst)
     -w, --watch     Watch and try to reconnect
+    -f, --force     Force start whether Internet is connected
     -i, --interval  Interval (def. 30)
     -r, --random    Try random one
     -h, --help      give this help list
@@ -109,8 +128,8 @@ def usage():
 if __name__ == '__main__':
     try:
         opts, args = getopt.getopt(sys.argv[1:],
-                                   'f:wi:rh',
-                                   ['file=','watch','interval=','random','help'])
+                                   'e:wi:rfh',
+                                   ['file=', 'watch', 'interval=', 'random', 'force', 'help'])
     except getopt.GetoptError as err:
         print(err)
         usage()
@@ -120,14 +139,16 @@ if __name__ == '__main__':
         if o in ('-h', '--help'):
             usage()
             sys.exit()
-        elif o in ('-f', '--file'):
+        elif o in ('-e', '--file'):
             filen = a
         elif o in ('-w', '--watch'):
             watchmode = True
         elif o in ('-i', '--interval'):
-            interval = a
+            interval = float(a)
         elif o in ('-r', '--random'):
             randommode = True
+        elif o in ('-f', '--force'):
+            force = True
 
     if start_test(filen):
         sys.exit(0)

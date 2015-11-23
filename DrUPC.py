@@ -60,7 +60,7 @@ def detect_connect_status():
     try:
         response = urllib2.urlopen('http://i.upc.edu.cn', timeout=0.5)
         return '数字石大' in response.read()
-    except urllib2.URLError, e:
+    except Exception:
         return False
 
 
@@ -85,8 +85,18 @@ class Crawler:
 
 # 用户名密码错误
 class BadPasswordError(Exception):
+    def __init__(self, count=0):
+        self.count = count
+    def count(self):
+        return self.count
     def __str__(self):
-        return 'Wrong username or password.'
+        if self.count < 0:
+            return 'Account is locked.'
+        elif self.count == 0:
+            return 'Wrong username or password.'
+        else:
+            return 'Wrong username or password. Count = %d.' % self.count
+            
 
 
 # 账号已经被使用（即使显示成功登录也需要去认证）
@@ -107,6 +117,12 @@ class NoMoneyError(Exception):
         return 'You have no money.'
 
 
+# 已经登录
+class AlreadyLoginError(Exception):
+    def __str__(self):
+        return 'You have no money.'
+
+
 # 登录到 UPC
 class WifiAuthCrawler(Crawler):
 
@@ -120,7 +136,7 @@ class WifiAuthCrawler(Crawler):
         # 检查是否已经登录了
         response = urllib2.urlopen(self.loginPage, timeout=1)
         if 'javascript:wc()' in response.read():
-            raise Exception('Already login.')
+            raise AlreadyLoginError('Already login.')
 
         headers = {
             'User-Agent' : 'Mozilla/5.0 (Windows NT 6.1; WOW64; rv:14.0) Gecko/20100101 Firefox/14.0.1',
@@ -186,6 +202,8 @@ class EthAuthCrawler(Crawler):
         # response = urllib2.urlopen(self.loginPage, timeout=1)
         # if 'javascript:wc()' in response.read():
         #     raise Exception('Already login.')
+        if detect_connect_status():
+            raise AlreadyLoginError()
 
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64; rv:14.0) Gecko/20100101 Firefox/14.0.1',
@@ -268,12 +286,12 @@ class SelfServiceCrawler(Crawler):
         text = response.read()
 
         if '账号被锁定' in text:
-            raise Exception('Your account is locked in 30 minutes!')
+            raise BadPasswordError(-1)
         if '账号或密码出现错误' in text:
-            raise Exception('Wrong username or password!')
+            raise BadPasswordError()
         if '登录密码不正确' in text:
             count = re.search('您已输错(\d*)次', text).group(1)
-            raise Exception('Wrong username or password! Count = %s' % count)
+            raise BadPasswordError(count)
 
         # 到“强制离线”页面找已登录设备
         response = urllib2.urlopen(self.baseUrl + 'nav_offLine')
