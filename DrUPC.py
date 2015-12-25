@@ -36,7 +36,7 @@ import time
 # 因此 172 那个必须放在 222 前面
 authServers = ['http://172.16.4.3', 'http://222.195.191.230']
 keywords = {
-    authServers[0]: 'Android',
+    authServers[0]: '172.16.4.3',
     authServers[1]: '222.195.191.230'
     }
 
@@ -46,7 +46,6 @@ def detect_authserver():
     for srv in authServers:
         try:
             response = urllib2.urlopen(srv, timeout=1)
-
             if keywords[srv] in response.read():
                 return srv
         except Exception, e:
@@ -120,7 +119,7 @@ class NoMoneyError(Exception):
 # 已经登录
 class AlreadyLoginError(Exception):
     def __str__(self):
-        return 'You have no money.'
+        return 'Already logined.'
 
 
 # 登录到 UPC
