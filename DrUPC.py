@@ -34,28 +34,47 @@ import time
 # 222.195.191.230 是宿舍网口的认证，没有做屏蔽所以在连 UPC 时也能访问
 # 如果在办公区用，请将 230 改成 231
 # 因此 172 那个必须放在 222 前面
-authServers = ['http://172.16.4.3', 'http://222.195.191.230']
-keywords = {
-    authServers[0]: '172.16.4.3',
-    authServers[1]: '222.195.191.230'
+AUTHSERVERS = ['http://172.16.4.3', 'http://222.195.191.230']
+KEYWORDS = {
+    AUTHSERVERS[0]: '172.16.4.3',
+    AUTHSERVERS[1]: '222.195.191.230'
     }
 
 
-# 根据所给的认证服务器进行探测，能够访问而且有对应关键词的第一个服务器即认证服务器
 def detect_authserver():
-    for srv in authServers:
+    '''
+    探测所处网络所使用的认证环境。返回认证页面网址或“unknown”
+    '''
+    for srv in AUTHSERVERS:
         try:
             response = urllib2.urlopen(srv, timeout=1)
-            if keywords[srv] in response.read():
+            if KEYWORDS[srv] in response.read():
                 return srv
-        except Exception, e:
+        except Exception as e:
             pass
     else:
         return 'unknown'
 
 
-# 检测连接状态 (假设数字石大从不抽风)
+def get_login_crawler():
+    '''
+    根据网络环境选用合适的爬虫。
+    '''
+    auth = detect_authserver()
+
+    if auth == 'unknown':
+        return None
+    else:
+        return {
+            AUTHSERVERS[0]: WifiAuthCrawler(),
+            AUTHSERVERS[1]: EthAuthCrawler()
+        }[auth]
+
+
 def detect_connect_status():
+    '''
+    检测网络连接状态。假设数字石大需要认证之后才能访问，而且网站从不抽风。
+    '''
     try:
         response = urllib2.urlopen('http://i.upc.edu.cn', timeout=0.5)
         return '数字石大' in response.read()
@@ -64,78 +83,85 @@ def detect_connect_status():
 
 
 class Crawler:
-
+    '''
+    用于登录的爬虫，抽象类
+    '''
     def __init__(self, username='', password=''):
         self.username = username
         self.password = password
 
         cj = cookielib.LWPCookieJar()
         cookie_support = urllib2.HTTPCookieProcessor(cj)
-        opener = urllib2.build_opener(cookie_support, urllib2.HTTPHandler)
-        urllib2.install_opener(opener)
+        self._opener = urllib2.build_opener(cookie_support, urllib2.HTTPHandler)
+        #urllib2.install_opener(opener)
 
     def set_login(self, username, password):
+        '''
+        设置用户名和密码。
+        '''
         self.username = username
         self.password = password
 
     def login(self):
-        return False
+        raise NotImplementedError
+
+    def logout(self):
+        raise NotImplementedError
 
 
-# 用户名密码错误
 class BadPasswordError(Exception):
+    '''
+    用户名密码错误
+    '''
     def __init__(self, count=0):
         self.count = count
-    def count(self):
-        return self.count
-    def __str__(self):
         if self.count < 0:
-            return 'Account is locked.'
+            self.message = 'Account is locked.'
         elif self.count == 0:
-            return 'Wrong username or password.'
+            self.message = 'Wrong username or password.'
         else:
-            return 'Wrong username or password. Count = %d.' % self.count
-            
+            self.message = 'Wrong username or password. Count = %d.' % self.count
+
+    def count(self):
+        '''
+        返回登录错误次数。仅适用于自助服务网站。
+        '''
+        return self.count
 
 
-# 账号已经被使用（即使显示成功登录也需要去认证）
-class UserOccupiedError(Exception):
-    def __str__(self):
-        return 'The account is being used now.'
+def new_error(klass, message, doc):
+    '''
+    根据提示语创建一个异常对象
+    '''
+    return type(klass, (Exception,), {'message': message, '__doc__': doc})
+
+UserOccupiedError = new_error('UserOccupiedError', 'The account is being used now.',
+                              '账号已被使用')
+UserRapedError    = new_error('UserRapedError', 'Good good study, day day, up.',
+                              '“上课时间不能上网”')
+NoMoneyError      = new_error('NoMoneyError', 'You have no money.',
+                              '欠费停机')
+AlreadyLoginError = new_error('AlreadyLoginError', 'Already login',
+                              '已经登录但仍然尝试进行认证')
+Error             = new_error('Error', 'Unknown Error', '错误')
 
 
-# “上课时间不能上网”
-class UserRapedError(Exception):
-    def __str__(self):
-        return 'Good good study, day day up.'
-
-
-# 欠费停机
-class NoMoneyError(Exception):
-    def __str__(self):
-        return 'You have no money.'
-
-
-# 已经登录
-class AlreadyLoginError(Exception):
-    def __str__(self):
-        return 'Already logined.'
-
-
-# 登录到 UPC
 class WifiAuthCrawler(Crawler):
-
-    def __init__(self, username='', password=''):
-        Crawler.__init__(self, username, password)
-        self.loginPage = 'http://172.16.4.3'
-        self.postPage = 'http://172.16.4.3'
-        self.logoutPage = 'http://172.16.4.3/F.htm'
+    '''
+    名字为“UPC”的无线热点的认证。
+    '''
+    LOGIN  = 'http://172.16.4.3'
+    POST   = 'http://172.16.4.3'
+    LOGOUT = 'http://172.16.4.3/F.htm'
 
     def login(self):
+        '''
+        登录。登录成功返回True，否则引发异常。
+        '''
         # 检查是否已经登录了
-        response = urllib2.urlopen(self.loginPage, timeout=1)
+        response = self._opener.open(self.LOGIN, timeout=1)
         if 'javascript:wc()' in response.read():
-            raise AlreadyLoginError('Already login.')
+            raise AlreadyLoginError()
 
         headers = {
             'User-Agent' : 'Mozilla/5.0 (Windows NT 6.1; WOW64; rv:14.0) Gecko/20100101 Firefox/14.0.1',
@@ -156,10 +182,10 @@ class WifiAuthCrawler(Crawler):
             }
         post_data = urllib.urlencode(post_data)
 
-        request = urllib2.Request(self.postPage, post_data, headers)
-        response = urllib2.urlopen(request)
+        request = urllib2.Request(self.POST, post_data, headers)
+        response = self._opener.open(request)
         text = response.read()
-        if 'http://v.upc.edu.cn' in text:
+        if "window.location='1.htm'" in text:
             time.sleep(0.5)
             if detect_connect_status():
                 return True
@@ -178,29 +204,28 @@ class WifiAuthCrawler(Crawler):
             elif code == 5:
                 raise NoMoneyError()
             else:
-                raise Exception('Unknown Error')
+                raise Error()
 
-    # 注销
     def logout(self):
-        response = urllib2.urlopen(self.logoutPage, timeout=1)
+        '''
+        注销。成功则返回True。
+        '''
+        response = self._opener.open(self.LOGOUT, timeout=1)
         return 'Msg=14' in response.read()
 
 
-# 校园网
 class EthAuthCrawler(Crawler):
-
-    def __init__(self, username='', password=''):
-        Crawler.__init__(self, username, password)
-        self.loginPage = 'http://222.195.191.230:801/eportal/?c=ACSetting&a=Login&wlanuserip=null&wlanacip=null&wlanacname=null&port=&iTermType=1&session=null'
-        self.postPage = 'http://222.195.191.230:801/eportal/?c=ACSetting&a=Login&wlanuserip=null&wlanacip=null&wlanacname=null&port=&iTermType=1&session=null'
-        self.logoutPage = 'http://222.195.191.230:801/eportal/?c=ACSetting&a=Logout&wlanuserip=null&wlanacip=null&wlanacname=null&port=&iTermType=1&session=null'
+    '''
+    校园网认证。用于宿舍插网线。
+    '''
+    LOGIN  = 'http://222.195.191.230:801/eportal/?c=ACSetting&a=Login&wlanuserip=null&wlanacip=null&wlanacname=null&port=&iTermType=1&session=null'
+    POST   = 'http://222.195.191.230:801/eportal/?c=ACSetting&a=Login&wlanuserip=null&wlanacip=null&wlanacname=null&port=&iTermType=1&session=null'
+    LOGOUT = 'http://222.195.191.230:801/eportal/?c=ACSetting&a=Logout&wlanuserip=null&wlanacip=null&wlanacname=null&port=&iTermType=1&session=null'
 
     def login(self):
-        # 检查是否已经登录了
-        # 备注：宿舍网没有能直接表示是否已经登录的东西
-        # response = urllib2.urlopen(self.loginPage, timeout=1)
-        # if 'javascript:wc()' in response.read():
-        #     raise Exception('Already login.')
+        '''
+        登录。登录成功返回True，否则引发异常。
+        '''
         if detect_connect_status():
             raise AlreadyLoginError()
 
@@ -220,8 +245,8 @@ class EthAuthCrawler(Crawler):
             }
         post_data = urllib.urlencode(post_data)
 
-        request = urllib2.Request(self.postPage, post_data, headers)
-        response = urllib2.urlopen(request)
+        request = urllib2.Request(self.POST, post_data, headers)
+        response = self._opener.open(request)
         text = response.read()
         if 'successfully logged' in text:
             if detect_connect_status():
@@ -241,31 +266,35 @@ class EthAuthCrawler(Crawler):
             elif code == 5:
                 raise NoMoneyError()
             else:
-                raise Exception('Unknown Error')
+                raise Error()
 
     def logout(self):
-        response = urllib2.urlopen(self.logoutPage)
+        '''
+        注销。成功则返回True。
+        '''
+        response = self._opener.open(self.LOGOUT)
         return 'Logout successfully' in response.read()
 
 
 # 强制离线
 class SelfServiceCrawler(Crawler):
+    '''
+    用于抓取自助服务系统网站的爬虫。
+    '''
+    BASEURL = 'http://self.upc.edu.cn/Self/'
+    LOGIN = 'http://self.upc.edu.cn/Self/nav_login'
+    POST = 'http://self.upc.edu.cn/Self/LoginAction.action'
+    LOGOUT = 'http://self.upc.edu.cn/Self/LogoutAction.action'
 
-    def __init__(self, username='', password=''):
-        Crawler.__init__(self, username, password)
-        self.baseUrl = 'http://self.upc.edu.cn/Self/'
-        self.loginPage = 'http://self.upc.edu.cn/Self/nav_login'
-        self.postPage = 'http://self.upc.edu.cn/Self/LoginAction.action'
-        self.logoutPage = 'http://self.upc.edu.cn/Self/LogoutAction.action'
-
-    def logout(self):
-        response = urllib2.urlopen(self.loginPage)
+    def login(self):
+        '''
+        登录到自助服务系统
+        '''
+        # 加载页面上的验证码，否则无法登录
+        response = self._opener.open(self.LOGIN)
+        self._opener.open(self.BASEURL + 'RandomCodeAction.action?randomNum=0.20741149433888495')
         text = response.read()
-
         checkcode = re.search('var checkcode="(\d*)"', text).group(1)
-
-        # 加载验证码否则无法正确登录
-        response = urllib2.urlopen(self.baseUrl + 'RandomCodeAction.action?randomNum=0.20741149433888495')
 
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64; rv:14.0) Gecko/20100101 Firefox/14.0.1',
@@ -280,8 +309,8 @@ class SelfServiceCrawler(Crawler):
             }
         post_data = urllib.urlencode(post_data)
 
-        request = urllib2.Request(self.postPage, post_data, headers)
-        response = urllib2.urlopen(request)
+        request = urllib2.Request(self.POST, post_data, headers)
+        response = self._opener.open(request)
         text = response.read()
 
         if '账号被锁定' in text:
@@ -292,18 +321,33 @@ class SelfServiceCrawler(Crawler):
             count = re.search('您已输错(\d*)次', text).group(1)
             raise BadPasswordError(count)
 
+        return True
+
+    def logout(self):
+        '''
+        从自助服务中注销。
+        '''
+        self._opener.open(self.LOGOUT)
+
+    def offline(self, all_in_one=True):
+        '''
+        在自助服务系统中强制下线。若all_in_one为True，那么就无须手动调用登录和注销过程。
+        '''
+        if all_in_one:
+            self.login()
+
         # 到“强制离线”页面找已登录设备
-        response = urllib2.urlopen(self.baseUrl + 'nav_offLine')
+        response = self._opener.open(self.BASEURL + 'nav_offLine')
         text = response.read()
 
         # 获取网号登录的 ID
         session_id = re.search('<td style="display:none;">(\d*)</td>', text)
         if session_id is not None:
             session_id = session_id.group(1)
-            response = urllib2.urlopen(self.baseUrl + 'tooffline?t=0.20741149433888495&fldsessionid=' + session_id)
+            self._opener.open(self.BASEURL + 'tooffline?t=0.20741149433888495&fldsessionid=' + session_id)
 
-        response = urllib2.urlopen(self.logoutPage)
-        response.read()
+        if all_in_one:
+            self.logout()
 
 
 def usage():
@@ -361,16 +405,10 @@ def main():
     # opener = urllib2.build_opener(cookie_support, urllib2.HTTPHandler)
     # urllib2.install_opener(opener)
 
-    auth = detect_authserver()
-
-    if auth == 'unknown':
+    c = get_login_crawler()
+    if c is None:
         print 'Are you in UPC?'
         sys.exit(2)
-    else:
-        c = {
-              authServers[0]: WifiAuthCrawler(),
-              authServers[1]: EthAuthCrawler()
-            }[auth]
 
     # 如果什么参数都没敲
     if not (login or logout or force):
@@ -400,8 +438,8 @@ def main():
         try:
             print 'Force logout'
             f = SelfServiceCrawler(user, password)
-            f.logout()
-        except Exception, e:
+            f.offline()
+        except Exception as e:
             print e
 
     # 用网号登录
