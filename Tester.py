@@ -22,28 +22,14 @@ import sys
 import getopt
 import time
 import random
+import threading
 
-filen = 'accounts.lst'
-watchmode = False
-interval = 30
-randommode = False
-force = False
-
-
-def get_crawler():
-    if detect_connect_status():
-        print 'Internet'
-        if not force:
-            return True
-
-    auth = detect_authserver()
-    if auth == authServers[0]:
-        return WifiAuthCrawler()
-    elif auth == authServers[1]:
-        return EthAuthCrawler()
-    else:
-        print 'Unknown Network'
-        return False
+TRYING  = 1
+OK      = 2
+EXIT    = 3
+ALREADY = 4
+FAILED  = 5
+OUT     = 6
 
 
 def watch(user):
@@ -61,57 +47,168 @@ def watch(user):
             sys.stdout.flush()
             if i >= interval*10 - 1:
                 break
-    print    
+    print
     print '%s is Dead.' % user
 
+class Listener:
+    '''
+    观察者，抽象类
+    '''
+    def __init__(self, name = None, tester = None):
+        self.name = name
+        if tester:
+            tester.register(self)
 
-def start_test(filename):
-    crawler = get_crawler()
-    if type(crawler) is bool:
-        return crawler
+    def notify(self, event):
+        if event[0] == TRYING:
+            print 'Trying %s...' % event[1]
+        elif event[0] == OK:
+            print 'OK'
+        elif event[0] == EXIT:
+            print 'User exited'
+        elif event[0] == ALREADY:
+            print 'Already login'
+        elif event[0] == FAILED:
+            print 'Failed, reason: %s' % event[1]
+        elif event[0] == OUT:
+            print 'Accounts are used up.'
 
-    with open(filename, 'r') as f:
-        if randommode:
-            records = f.readlines()
-            random.shuffle(records)
+
+class TerminateListener(Listener):
+    '''
+    响应事件之后结束程序
+    '''
+    def notify(self, event):
+        if event[0] == OK:
+            sys.exit(0)
+        elif event[0] in (EXIT, ALREADY, OUT):
+            sys.exit(1)
+
+
+class AnimListener(Listener):
+    '''
+    收到OK消息之后放文本动画
+    '''
+    def __init__(self, name=None, tester=None):
+        Listener.__init__(self, name, tester)
+        if tester:
+            self.interval = tester.interval
         else:
-            records = f
+            self.interval = 0
 
-        for record in records:
+        self._t = None
+
+    def notify(self, event):
+        pass
+        # TODO 实现动画效果
+        #def anim(interval):
+        #    sys.stdout.flush()  # for Cmder
+        #    while detect_connect_status():
+        #        sys.stdout.write('.')
+        #        sys.stdout.flush()  # for Cmder
+        #        # Animation
+        #        for i, ch in enumerate(cycle(['|', '/', '-', '\\'])):
+        #            sys.stdout.write(ch)
+        #            sys.stdout.flush()
+        #            time.sleep(0.1)
+        #            sys.stdout.write("\b")
+        #            sys.stdout.flush()
+        #            if i >= interval*10 - 1:
+        #                break
+        #    print
+
+        #if event[0] == OK:
+        #    # 开始放动画
+        #    if self._t is None:
+        #        self._t = threading.Thread(target=anim, args=(self.interval,))
+        #        self._t.start()
+        #else:
+        #    # 停止动画
+        #    if self._t:
+        #        self._t.
+
+
+class Tester:
+    def __init__(self, records = [], interval=30, forcestart=False):
+        self.listeners = []
+        self.records = records
+        self.interval = interval
+        self.forcestart = forcestart
+
+    def register(self, listener):
+        self.listeners.append(listener)
+
+    def unregister(self, listener):
+        self.listeners.remove(listener)
+
+    def notify_listeners(self, event):
+        for listener in self.listeners:
+            listener.notify(event)
+
+    def shuffle(self):
+        random.shuffle(self.records)
+
+    def work(self):
+        if detect_connect_status() and not self.forcestart:
+            return True
+
+        crawler = get_login_crawler()
+        if crawler is None:
+            return False
+
+        for record in self.records:
             try:
                 record = record.splitlines()[0]
                 user, passkey = record.split(',')
             except ValueError:
                 continue
 
-            print 'Trying %s...' % user,
+            self.notify_listeners([TRYING, user])
 
             crawler.set_login(user, passkey)
 
             try:
                 if crawler.login():
-                    print 'OK'
-
-                    if watchmode:
-                        watch(user)
-                    else:        
-                        return True
-
+                    self.notify_listeners([OK, user])
+                    # TODO 阻塞
+                    while detect_connect_status():
+                        time.sleep(self.interval)
             except KeyboardInterrupt:
-                print 'Exit'
+                self.notify_listeners([EXIT])
                 return True
             except AlreadyLoginError:
-                print 'Already Login.'
-                if watchmode:
-                    watch('?')
-                else:
-                    return True
-            except Exception, e:
-                print 'Failed: ', e
+                self.notify_listeners([ALREADY])
+            except Exception as e:
+                self.notify_listeners([FAILED, e.message])
+        else:
+            self.notify_listeners([OUT])
+            return False
 
-    print 'Oops! No accounts can be used!'
-    return False
 
+def load_from_file(filename):
+    with open(filename, 'r') as f:
+        return f.readlines()
+
+
+def textmode(filename, interval=30, force=False, randommode=False, watchmode=False):
+    records = load_from_file(filename)
+    tester = Tester(records, interval, force)
+    if watchmode:
+        listener = Listener('listener', tester)
+        anim = AnimListener('anim', tester)
+    else:
+        listener = TerminateListener('listener', tester)
+
+    if randommode:
+        tester.shuffle()
+
+    tester.work()
+
+
+def guimode(filename, interval=30, force=False, randommode=False, watchmode=False):
+    # TODO 图形界面
+    pass
+    
 
 def usage():
     print("Usage: %s [OPTION]" % sys.argv[0])
@@ -121,6 +218,7 @@ def usage():
     -f, --force     Force start whether Internet is connected
     -i, --interval  Interval (def. 30)
     -r, --random    Try random one
+    -g, --gui       GUI mode
     -h, --help      give this help list
 """)
 
@@ -128,12 +226,19 @@ def usage():
 if __name__ == '__main__':
     try:
         opts, args = getopt.getopt(sys.argv[1:],
-                                   'e:wi:rfh',
-                                   ['file=', 'watch', 'interval=', 'random', 'force', 'help'])
+                                   'e:wi:rfhg',
+                                   ['file=', 'watch', 'interval=', 'random', 'force', 'help', 'gui'])
     except getopt.GetoptError as err:
         print(err)
         usage()
         sys.exit(2)
+
+    filen      = 'accounts.lst'
+    watchmode  = False
+    interval   = 30
+    randommode = False
+    force      = False
+    gui        = False
 
     for o, a in opts:
         if o in ('-h', '--help'):
@@ -149,8 +254,10 @@ if __name__ == '__main__':
             randommode = True
         elif o in ('-f', '--force'):
             force = True
+        elif o in ('-g', '--gui'):
+            gui = True
 
-    if start_test(filen):
-        sys.exit(0)
-    else:    
-        sys.exit(1)
+    if gui:
+        guimode(filen, interval, force, randommode, watchmode)
+    else:
+        textmode(filen, interval, force, randommode, watchmode)

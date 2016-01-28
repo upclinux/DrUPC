@@ -56,7 +56,7 @@ def detect_authserver():
         return 'unknown'
 
 
-def get_login_crawler():
+def get_login_crawler(username = '', password = ''):
     '''
     根据网络环境选用合适的爬虫。
     '''
@@ -66,8 +66,8 @@ def get_login_crawler():
         return None
     else:
         return {
-            AUTHSERVERS[0]: WifiAuthCrawler(),
-            AUTHSERVERS[1]: EthAuthCrawler()
+            AUTHSERVERS[0]: WifiAuthCrawler(username, password),
+            AUTHSERVERS[1]: EthAuthCrawler(username, password)
         }[auth]
 
 
@@ -77,7 +77,7 @@ def detect_connect_status():
     '''
     try:
         response = urllib2.urlopen('http://i.upc.edu.cn', timeout=0.5)
-        return '数字石大' in response.read()
+        return '数字石大 | Digitalized DCP' in response.read()
     except Exception:
         return False
 
