@@ -152,11 +152,14 @@ class Tester:
         if detect_connect_status() and not self.forcestart:
             return True
 
-        crawler = get_login_crawler()
-        if crawler is None:
-            return False
-
         for record in self.records:
+            if detect_authserver() is None:
+                print "Error: Network changed."
+                return False;
+
+            while detect_connect_status():
+                time.sleep(self.interval)
+
             try:
                 record = record.splitlines()[0]
                 user, passkey = record.split(',')
@@ -176,8 +179,6 @@ class Tester:
             except KeyboardInterrupt:
                 self.notify_listeners([EXIT])
                 return True
-            except AlreadyLoginError:
-                self.notify_listeners([ALREADY])
             except Exception as e:
                 self.notify_listeners([FAILED, e.message])
         else:
@@ -208,7 +209,7 @@ def textmode(filename, interval=30, force=False, randommode=False, watchmode=Fal
 def guimode(filename, interval=30, force=False, randommode=False, watchmode=False):
     # TODO 图形界面
     pass
-    
+
 
 def usage():
     print("Usage: %s [OPTION]" % sys.argv[0])

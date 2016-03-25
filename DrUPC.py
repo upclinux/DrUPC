@@ -47,13 +47,13 @@ def detect_authserver():
     '''
     for srv in AUTHSERVERS:
         try:
-            response = urllib2.urlopen(srv, timeout=1)
+            response = urllib2.urlopen(srv, timeout=2)
             if KEYWORDS[srv] in response.read():
                 return srv
         except Exception as e:
             pass
     else:
-        return 'unknown'
+        return None
 
 
 def get_login_crawler(username = '', password = ''):
@@ -62,13 +62,13 @@ def get_login_crawler(username = '', password = ''):
     '''
     auth = detect_authserver()
 
-    if auth == 'unknown':
-        return None
-    else:
+    if auth:
         return {
             AUTHSERVERS[0]: WifiAuthCrawler(username, password),
             AUTHSERVERS[1]: EthAuthCrawler(username, password)
         }[auth]
+    else:
+        return None
 
 
 def detect_connect_status():
@@ -76,7 +76,7 @@ def detect_connect_status():
     检测网络连接状态。假设数字石大需要认证之后才能访问，而且网站从不抽风。
     '''
     try:
-        response = urllib2.urlopen('http://i.upc.edu.cn', timeout=0.5)
+        response = urllib2.urlopen('http://i.upc.edu.cn', timeout=2)
         return '数字石大 | Digitalized DCP' in response.read()
     except Exception:
         return False
@@ -93,7 +93,6 @@ class Crawler:
         cj = cookielib.LWPCookieJar()
         cookie_support = urllib2.HTTPCookieProcessor(cj)
         self._opener = urllib2.build_opener(cookie_support, urllib2.HTTPHandler)
-        #urllib2.install_opener(opener)
 
     def set_login(self, username, password):
         '''
@@ -161,7 +160,7 @@ class WifiAuthCrawler(Crawler):
         # 检查是否已经登录了
         response = self._opener.open(self.LOGIN, timeout=1)
         if 'javascript:wc()' in response.read():
-            raise AlreadyLoginError()
+            return True
 
         headers = {
             'User-Agent' : 'Mozilla/5.0 (Windows NT 6.1; WOW64; rv:14.0) Gecko/20100101 Firefox/14.0.1',
@@ -227,7 +226,7 @@ class EthAuthCrawler(Crawler):
         登录。登录成功返回True，否则引发异常。
         '''
         if detect_connect_status():
-            raise AlreadyLoginError()
+            return True
 
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64; rv:14.0) Gecko/20100101 Firefox/14.0.1',
