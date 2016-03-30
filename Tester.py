@@ -23,6 +23,7 @@ import getopt
 import time
 import random
 import threading
+import logging
 
 TRYING  = 1
 OK      = 2
@@ -32,46 +33,31 @@ FAILED  = 5
 OUT     = 6
 
 
-def watch(user):
-    sys.stdout.write('Watching')
-    sys.stdout.flush()  # for Cmder
-    while detect_connect_status():
-        sys.stdout.write('.')
-        sys.stdout.flush()  # for Cmder
-        # Animation
-        for i, ch in enumerate(cycle(['|', '/', '-', '\\'])):
-            sys.stdout.write(ch)
-            sys.stdout.flush()
-            time.sleep(0.1)
-            sys.stdout.write("\b")
-            sys.stdout.flush()
-            if i >= interval*10 - 1:
-                break
-    print
-    print '%s is Dead.' % user
+logging.basicConfig(level=logging.INFO,
+    format='[%(levelname)s] %(asctime)s %(message)s',
+    datefmt='%Y/%m/%d %H:%M:%S')
+
 
 class Listener:
     '''
     观察者，抽象类
     '''
-    def __init__(self, name = None, tester = None):
+    def __init__(self, name=None, tester=None):
         self.name = name
         if tester:
             tester.register(self)
 
     def notify(self, event):
         if event[0] == TRYING:
-            print 'Trying %s...' % event[1]
+            logging.info('Use %s' % event[1])
         elif event[0] == OK:
-            print 'OK'
+            logging.info('Connected to %s' % event[1])
         elif event[0] == EXIT:
-            print 'User exited'
-        elif event[0] == ALREADY:
-            print 'Already login'
+            logging.warning('Exit by user')
         elif event[0] == FAILED:
-            print 'Failed, reason: %s' % event[1]
+            logging.error('Unable to connect: %s' % event[1])
         elif event[0] == OUT:
-            print 'Accounts are used up.'
+            logging.critical('Accounts are used up.')
 
 
 class TerminateListener(Listener):
@@ -129,7 +115,7 @@ class AnimListener(Listener):
 
 
 class Tester:
-    def __init__(self, records = [], interval=30, forcestart=False):
+    def __init__(self, records=[], interval=30, forcestart=False):
         self.listeners = []
         self.records = records
         self.interval = interval
@@ -150,12 +136,18 @@ class Tester:
 
     def work(self):
         if detect_connect_status() and not self.forcestart:
+            logging.warning('Connected')
             return True
+
+        crawler = get_login_crawler()
+        if crawler is None:
+            logging.error('Unable to detect auth servers.')
+            return False
 
         for record in self.records:
             if detect_authserver() is None:
-                print "Error: Network changed."
-                return False;
+                logging.error('Network changed')
+                return False
 
             while detect_connect_status():
                 time.sleep(self.interval)
@@ -173,7 +165,6 @@ class Tester:
             try:
                 if crawler.login():
                     self.notify_listeners([OK, user])
-                    # TODO 阻塞
                     while detect_connect_status():
                         time.sleep(self.interval)
             except KeyboardInterrupt:
