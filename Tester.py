@@ -143,6 +143,8 @@ class Tester:
         if crawler is None:
             logging.error('Unable to detect auth servers.')
             return False
+        else:
+            logging.info(crawler)
 
         for record in self.records:
             if detect_authserver() is None:

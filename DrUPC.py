@@ -76,8 +76,8 @@ def detect_connect_status():
     检测网络连接状态。假设数字石大需要认证之后才能访问，而且网站从不抽风。
     '''
     try:
-        response = urllib2.urlopen('http://i.upc.edu.cn', timeout=2)
-        return '数字石大 | Digitalized DCP' in response.read()
+        response = urllib2.urlopen('http://www.upc.edu.cn', timeout=2)
+        return '青岛市黄岛区长江西路66号' in response.read()
     except Exception:
         return False
 
